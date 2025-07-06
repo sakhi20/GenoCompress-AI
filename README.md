@@ -265,6 +265,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - TensorFlow and Keras teams for deep learning frameworks
 - BioPython community for genomic data handling tools
 - Open source genomics community
+- **Dr. Paawan Sharma**, for his mentorship and expert guidance throughout the development of this project
 
 ---
 
