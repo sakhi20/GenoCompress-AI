@@ -83,28 +83,17 @@ scikit-learn>=1.0.0
 ## 📁 Project Structure
 
 ```
-genomic-compression/
-├── data/
-│   ├── raw/                    # Raw FASTA files
-│   ├── processed/              # Preprocessed sequences
-│   └── compressed/             # Compressed outputs
-├── models/
-│   ├── autoencoder.py         # Autoencoder architecture
-│   ├── train.py              # Training script
-│   └── saved_models/         # Trained model weights
-├── src/
-│   ├── preprocessing.py       # Data preprocessing utilities
-│   ├── compression.py        # Compression pipeline
-│   ├── evaluation.py         # Performance metrics
-│   └── utils.py             # Helper functions
-├── notebooks/
-│   ├── exploration.ipynb     # Data exploration
-│   └── results_analysis.ipynb # Results visualization
-├── tests/
-│   └── test_compression.py   # Unit tests
-├── requirements.txt
-├── README.md
-└── LICENSE
+├── autoencoder_model.py   # Conv1D encoder-decoder architecture (Keras)
+├── pipeline.py            # End-to-end compression/decompression pipeline
+├── preprocessor.py        # FASTA → one-hot encoded sequences
+├── data_loader.py         # NCBI SRA data loading utilities
+├── evaluator.py           # Compression ratio, GC content, base accuracy metrics
+├── metrics.py             # Biological fidelity scoring functions
+├── gatk_integration.py    # GATK toolkit interface for variant-aware preprocessing
+├── utils.py               # Helper functions
+├── encoder.h5             # Trained encoder weights
+├── decoder.h5             # Trained decoder weights
+└── requirements.txt       # Python dependencies
 ```
 
 ## 🚀 Quick Start
@@ -112,33 +101,32 @@ genomic-compression/
 ### 1. Prepare Your Data
 
 ```python
-from src.preprocessing import prepare_sequences
+from preprocessor import prepare_sequences
 
 # Load and preprocess FASTA file
-sequences = prepare_sequences('data/raw/genome.fasta', 
+sequences = prepare_sequences('genome.fasta', 
                              chunk_size=100000,
                              sequence_length=151)
 ```
 
-### 2. Train the Model
+### 2. Build and Train the Model
 
 ```python
-from models.train import train_autoencoder
+from autoencoder_model import build_autoencoder
 
-# Train the compression model
-model = train_autoencoder(sequences, 
-                         epochs=100,
-                         batch_size=32,
-                         validation_split=0.2)
+# Build the compression model
+encoder, decoder, autoencoder = build_autoencoder(sequence_length=151)
+autoencoder.fit(sequences, sequences, epochs=100, batch_size=32, validation_split=0.2)
 ```
 
 ### 3. Compress Genomic Data
 
 ```python
-from src.compression import compress_sequences
+from pipeline import compress_sequences
+from evaluator import calculate_compression_ratio
 
 # Compress your genomic sequences
-compressed_data = compress_sequences(model, sequences)
+compressed_data = compress_sequences(encoder, sequences)
 compression_ratio = calculate_compression_ratio(sequences, compressed_data)
 print(f"Compression Ratio: {compression_ratio:.1f}×")
 ```
@@ -146,11 +134,11 @@ print(f"Compression Ratio: {compression_ratio:.1f}×")
 ### 4. Decompress and Validate
 
 ```python
-from src.compression import decompress_sequences
-from src.evaluation import evaluate_biological_fidelity
+from pipeline import decompress_sequences
+from evaluator import evaluate_biological_fidelity
 
 # Decompress sequences
-reconstructed = decompress_sequences(model, compressed_data)
+reconstructed = decompress_sequences(decoder, compressed_data)
 
 # Validate biological fidelity
 fidelity_metrics = evaluate_biological_fidelity(sequences, reconstructed)
@@ -159,36 +147,28 @@ print(f"GC Content Preservation: {fidelity_metrics['gc_preservation']:.1f}%")
 
 ## 📈 Usage Examples
 
-### Command Line Interface
-
-```bash
-# Compress a FASTA file
-python compress.py --input genome.fasta --output compressed.npy --model saved_models/autoencoder.h5
-
-# Decompress back to FASTA
-python decompress.py --input compressed.npy --output reconstructed.fasta --model saved_models/autoencoder.h5
-
-# Evaluate compression performance
-python evaluate.py --original genome.fasta --reconstructed reconstructed.fasta
-```
-
 ### Python API
 
 ```python
-from genomic_compression import GenomicCompressor
+from data_loader import load_sra_data
+from preprocessor import prepare_sequences
+from pipeline import compress_sequences, decompress_sequences
+from evaluator import calculate_compression_ratio, evaluate_biological_fidelity
 
-# Initialize compressor
-compressor = GenomicCompressor(model_path='saved_models/autoencoder.h5')
+# Load data
+raw_sequences = load_sra_data('SRR10971000')
 
-# Compress
-compressed_size = compressor.compress_file('genome.fasta', 'compressed.npy')
+# Preprocess
+sequences = prepare_sequences(raw_sequences, sequence_length=151)
 
-# Decompress  
-compressor.decompress_file('compressed.npy', 'reconstructed.fasta')
+# Compress using pre-trained encoder
+compressed_data = compress_sequences(encoder, sequences)
 
-# Get metrics
-metrics = compressor.get_compression_metrics()
-print(f"Compression ratio: {metrics['ratio']:.1f}×")
+# Decompress and evaluate
+reconstructed = decompress_sequences(decoder, compressed_data)
+ratio = calculate_compression_ratio(sequences, compressed_data)
+fidelity = evaluate_biological_fidelity(sequences, reconstructed)
+print(f"Compression ratio: {ratio:.1f}× | GC preservation: {fidelity['gc_preservation']:.1f}%")
 ```
 
 ## 🔬 Dataset Information
@@ -214,6 +194,12 @@ The project was validated using:
 - **100% read length consistency**
 - Suitable for non-clinical genomic analyses
 
+## ⚠️ Limitations & Scope
+
+- **Lossy compression**: 92.3% base call accuracy means this is NOT suitable for clinical diagnostics, rare variant detection (< 1% allele frequency), or any application requiring lossless reconstruction.
+- **Baseline context**: GZIP (3.2×) is a general-purpose compressor not designed for genomic data. Purpose-built tools like CRAM (~5× on WGS) and SPRING are stronger references; this project focuses on demonstrating deep learning approaches rather than claiming state-of-the-art compression.
+- **Dataset scale**: Validated on a single WGS sample (SRR10971000, 2.6 GB). Performance on diverse organisms or sequencing technologies is untested.
+
 ## ⚠️ Important Considerations
 
 ### When to Use
@@ -229,24 +215,6 @@ The project was validated using:
 - Rare variant detection (< 1% allele frequency)
 - Applications requiring lossless compression
 - Regulatory submissions requiring exact data preservation
-
-### Development Setup
-
-```bash
-# Clone and setup development environment
-git clone https://github.com/yourusername/genomic-compression.git
-cd genomic-compression
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install in development mode
-pip install -e .
-
-# Run tests
-python -m pytest tests/
-```
 
 ## 📄 License
 
